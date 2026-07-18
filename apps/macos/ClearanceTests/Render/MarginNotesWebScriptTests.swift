@@ -21,7 +21,7 @@ final class MarginNotesWebScriptTests: XCTestCase {
             """
             <!doctype html>
             <html><head><style>
-            :root { --surface: #fff; --surface-border: #ddd; --text: #111; --muted: #777; --bg: #f5f5f5; }
+            :root { --surface: #fff; --surface-border: #ddd; --text: #111; --muted: #777; --bg: #f5f5f5; --link: #1677ff; }
             .document { max-width: 760px; margin: 20px auto; }
             </style></head><body>
             <main class="document"><article class="markdown"><p>Agent's job is to max cumulative rewards over time.</p></article></main>
@@ -46,6 +46,7 @@ final class MarginNotesWebScriptTests: XCTestCase {
               suffix: ' over time.',
               text: 'Meaning total sum'
             }]);
+            window.clearanceMarginNotes.reposition();
             true;
             """
         )
@@ -60,6 +61,30 @@ final class MarginNotesWebScriptTests: XCTestCase {
             in: webView
         )
         XCTAssertTrue(bubbleRendered)
+
+        let connectorRendered = try await evaluateBoolean(
+            "document.querySelector('.clearance-note-connector')?.getAttribute('d')?.startsWith('M ') === true",
+            in: webView
+        )
+        XCTAssertTrue(connectorRendered)
+        let connectorUsesNotePrimaryColor = try await evaluateBoolean(
+            "getComputedStyle(document.querySelector('.clearance-note-connector')).stroke === 'rgb(224, 168, 0)'",
+            in: webView
+        )
+        XCTAssertTrue(connectorUsesNotePrimaryColor)
+
+        _ = try await webView.evaluateJavaScript(
+            "document.querySelector('.clearance-note-anchor').dispatchEvent(new MouseEvent('mouseenter')); true;"
+        )
+        let hoverLinksAnchorAndNote = try await evaluateBoolean(
+            """
+            document.querySelector('.clearance-note-anchor')?.dataset.clearanceNoteActive === 'true' &&
+            document.querySelector('.clearance-margin-note')?.dataset.clearanceNoteActive === 'true' &&
+            document.querySelector('.clearance-note-connector')?.dataset.clearanceNoteActive === 'true'
+            """,
+            in: webView
+        )
+        XCTAssertTrue(hoverLinksAnchorAndNote)
     }
 
     private func evaluateBoolean(_ script: String, in webView: WKWebView) async throws -> Bool {

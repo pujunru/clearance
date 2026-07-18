@@ -12,6 +12,9 @@ enum MarginNotesWebScript {
 
       const style = document.createElement('style');
       style.textContent = `
+        :root {
+          --clearance-note-primary: #e0a800;
+        }
         .clearance-note-anchor {
           background: color-mix(in srgb, #ffd60a 30%, transparent);
           border-bottom: 1px solid color-mix(in srgb, #b88600 65%, transparent);
@@ -20,7 +23,8 @@ enum MarginNotesWebScript {
           cursor: pointer;
         }
         .clearance-note-anchor[data-clearance-note-active="true"] {
-          background: color-mix(in srgb, #ffd60a 52%, transparent);
+          background: color-mix(in srgb, var(--clearance-note-primary) 34%, transparent);
+          box-shadow: 0 0 0 1px color-mix(in srgb, var(--clearance-note-primary) 62%, transparent);
         }
         .clearance-margin-note {
           position: absolute;
@@ -40,6 +44,30 @@ enum MarginNotesWebScript {
         }
         .clearance-margin-note:hover {
           border-color: color-mix(in srgb, #e0a800 55%, var(--surface-border));
+        }
+        .clearance-margin-note[data-clearance-note-active="true"] {
+          border-color: color-mix(in srgb, var(--clearance-note-primary) 72%, var(--surface-border));
+          border-left-color: var(--clearance-note-primary);
+          box-shadow: 0 5px 18px rgba(0, 0, 0, 0.10), 0 0 0 1px color-mix(in srgb, var(--clearance-note-primary) 22%, transparent);
+        }
+        .clearance-note-connectors {
+          position: absolute;
+          inset: 0;
+          z-index: 15;
+          overflow: visible;
+          pointer-events: none;
+        }
+        .clearance-note-connector {
+          fill: none;
+          stroke: var(--clearance-note-primary);
+          stroke-width: 1.75;
+          stroke-linecap: round;
+          vector-effect: non-scaling-stroke;
+          opacity: 0;
+          transition: opacity 120ms ease;
+        }
+        .clearance-note-connector[data-clearance-note-active="true"] {
+          opacity: 0.92;
         }
         .clearance-margin-note-delete {
           position: absolute;
@@ -115,6 +143,7 @@ enum MarginNotesWebScript {
       let addButton = null;
       let editor = null;
       let pendingSelection = null;
+      let connectorLayer = null;
 
       const post = (payload) => {
         window.webkit?.messageHandlers?.clearanceMarginNotes?.postMessage(payload);
@@ -195,6 +224,67 @@ enum MarginNotesWebScript {
         for (const element of document.querySelectorAll('.clearance-margin-note')) {
           element.remove();
         }
+        connectorLayer?.replaceChildren();
+      };
+
+      const ensureConnectorLayer = () => {
+        if (connectorLayer?.isConnected) { return connectorLayer; }
+        connectorLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        connectorLayer.classList.add('clearance-note-connectors');
+        connectorLayer.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(connectorLayer);
+        return connectorLayer;
+      };
+
+      const setNoteActive = (id, active) => {
+        for (const element of document.querySelectorAll(`[data-clearance-note-id="${CSS.escape(id)}"]`)) {
+          if (active) {
+            element.dataset.clearanceNoteActive = 'true';
+          } else {
+            element.removeAttribute('data-clearance-note-active');
+          }
+        }
+      };
+
+      const updateConnectorPaths = () => {
+        if (!connectorLayer) { return; }
+        const width = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth, window.innerWidth);
+        const height = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, window.innerHeight);
+        connectorLayer.setAttribute('width', String(width));
+        connectorLayer.setAttribute('height', String(height));
+        connectorLayer.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+        for (const path of connectorLayer.querySelectorAll('.clearance-note-connector')) {
+          const id = path.dataset.clearanceNoteId;
+          const anchors = Array.from(article.querySelectorAll(`.clearance-note-anchor[data-clearance-note-id="${CSS.escape(id)}"]`));
+          const bubble = document.querySelector(`.clearance-margin-note[data-clearance-note-id="${CSS.escape(id)}"]`);
+          if (!anchors.length || !bubble) { continue; }
+
+          const anchorRects = anchors.map((element) => element.getBoundingClientRect());
+          const anchorRect = {
+            left: Math.min(...anchorRects.map((rect) => rect.left)),
+            right: Math.max(...anchorRects.map((rect) => rect.right)),
+            top: Math.min(...anchorRects.map((rect) => rect.top)),
+            bottom: Math.max(...anchorRects.map((rect) => rect.bottom))
+          };
+          const bubbleRect = bubble.getBoundingClientRect();
+          const bubbleIsRight = bubbleRect.left >= anchorRect.right;
+          const startX = (bubbleIsRight ? anchorRect.right : anchorRect.left) + window.scrollX;
+          const startY = (anchorRect.top + anchorRect.bottom) / 2 + window.scrollY;
+          const endX = (bubbleIsRight ? bubbleRect.left : bubbleRect.right) + window.scrollX;
+          const endY = (bubbleRect.top + bubbleRect.bottom) / 2 + window.scrollY;
+          const direction = bubbleIsRight ? 1 : -1;
+          const bend = Math.max(24, Math.abs(endX - startX) * 0.42);
+          const arc = Math.max(16, Math.min(34, Math.abs(endX - startX) * 0.12));
+          path.setAttribute('d', `M ${startX} ${startY} C ${startX + direction * bend} ${startY - arc}, ${endX - direction * bend} ${endY - arc}, ${endX} ${endY}`);
+        }
+      };
+
+      const addConnector = (id) => {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.classList.add('clearance-note-connector');
+        path.dataset.clearanceNoteId = id;
+        ensureConnectorLayer().appendChild(path);
       };
 
       const positionNotes = () => {
@@ -213,6 +303,7 @@ enum MarginNotesWebScript {
           element.style.top = `${top}px`;
           nextTop = top + element.offsetHeight + 8;
         }
+        updateConnectorPaths();
       };
 
       const closeEditor = () => {
@@ -291,16 +382,17 @@ enum MarginNotesWebScript {
             });
           });
           bubble.addEventListener('mouseenter', () => {
-            for (const element of article.querySelectorAll(`[data-clearance-note-id="${CSS.escape(note.id)}"]`)) {
-              element.dataset.clearanceNoteActive = 'true';
-            }
+            setNoteActive(note.id, true);
           });
           bubble.addEventListener('mouseleave', () => {
-            for (const element of article.querySelectorAll(`[data-clearance-note-id="${CSS.escape(note.id)}"]`)) {
-              element.removeAttribute('data-clearance-note-active');
-            }
+            setNoteActive(note.id, false);
           });
           document.body.appendChild(bubble);
+          addConnector(note.id);
+          for (const anchorElement of article.querySelectorAll(`.clearance-note-anchor[data-clearance-note-id="${CSS.escape(note.id)}"]`)) {
+            anchorElement.addEventListener('mouseenter', () => setNoteActive(note.id, true));
+            anchorElement.addEventListener('mouseleave', () => setNoteActive(note.id, false));
+          }
         }
         requestAnimationFrame(positionNotes);
       };
