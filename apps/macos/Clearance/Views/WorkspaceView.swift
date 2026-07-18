@@ -14,6 +14,7 @@ struct WorkspaceView: View {
     @ObservedObject private var appSettings: AppSettings
     @StateObject private var viewModel: WorkspaceViewModel
     @StateObject private var interactionState = WorkspaceInteractionState()
+    @StateObject private var marginNoteStore = MarginNoteStore()
     @State private var isPopOutDropTargeted = false
     @State private var isOutlineVisible = true
     @State private var renderedFindQuery = ""
@@ -61,6 +62,8 @@ struct WorkspaceView: View {
                             theme: appSettings.theme,
                             appearance: appSettings.appearance,
                             textScale: appSettings.renderedTextScale,
+                            contentWidth: appSettings.renderedContentWidth,
+                            marginNoteStore: marginNoteStore,
                             mode: $viewModel.mode
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -81,6 +84,8 @@ struct WorkspaceView: View {
                             theme: appSettings.theme,
                             appearance: appSettings.appearance,
                             textScale: appSettings.renderedTextScale,
+                            contentWidth: appSettings.renderedContentWidth,
+                            marginNoteStore: marginNoteStore,
                             onOpenLinkedDocument: { linkedURL in
                                 _ = openDocument(linkedURL)
                             }
@@ -213,6 +218,12 @@ struct WorkspaceView: View {
                     .help(isOutlineVisible ? "Hide Outline" : "Show Outline")
                 }
             }
+
+            ToolbarItem(id: "clearance.contentWidth", placement: .primaryAction) {
+                if canAdjustContentWidth {
+                    contentWidthMenu
+                }
+            }
         }
         .background(WindowToolbarPriorityConfigurator(
             activeURL: viewModel.activeDocumentURL,
@@ -302,7 +313,8 @@ struct WorkspaceView: View {
         popoutWindowController.openWindow(
             for: session,
             mode: viewModel.mode,
-            appSettings: appSettings
+            appSettings: appSettings,
+            marginNoteStore: marginNoteStore
         )
     }
 
@@ -319,6 +331,8 @@ struct WorkspaceView: View {
                 theme: appSettings.theme,
                 appearance: appSettings.appearance,
                 textScale: appSettings.renderedTextScale,
+                contentWidth: appSettings.renderedContentWidth,
+                marginNoteStore: marginNoteStore,
                 onOpenLinkedDocument: { linkedURL in
                     _ = openDocument(linkedURL)
                 }
@@ -388,7 +402,8 @@ struct WorkspaceView: View {
             popoutWindowController.openWindow(
                 for: session,
                 mode: viewModel.mode,
-                appSettings: appSettings
+                appSettings: appSettings,
+                marginNoteStore: marginNoteStore
             )
         }
     }
@@ -423,7 +438,8 @@ struct WorkspaceView: View {
         popoutWindowController.openWindow(
             for: session,
             mode: viewModel.mode,
-            appSettings: appSettings
+            appSettings: appSettings,
+            marginNoteStore: marginNoteStore
         )
         return true
     }
@@ -465,6 +481,24 @@ struct WorkspaceView: View {
 
         let parsed = FrontmatterParser().parse(markdown: markdown)
         return !parsed.headings.isEmpty
+    }
+
+    private var canAdjustContentWidth: Bool {
+        viewModel.mode == .view && activeMarkdownContent != nil
+    }
+
+    private var contentWidthMenu: some View {
+        Menu {
+            Picker("Content Width", selection: $appSettings.renderedContentWidth) {
+                ForEach(RenderedContentWidth.allCases) { width in
+                    Text(width.title).tag(width)
+                }
+            }
+        } label: {
+            Label("Content Width", systemImage: "arrow.left.and.right")
+        }
+        .labelStyle(.iconOnly)
+        .help("Content Width: \(appSettings.renderedContentWidth.title)")
     }
 
     private var activeMarkdownContent: String? {

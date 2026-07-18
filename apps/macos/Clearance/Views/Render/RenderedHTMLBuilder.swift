@@ -29,6 +29,7 @@ struct RenderedHTMLBuilder {
         theme: AppTheme = .apple,
         appearance: AppearancePreference = .system,
         textScale: Double = 1.0,
+        contentWidth: RenderedContentWidth = .compact,
         isRemoteContent: Bool = false
     ) -> String {
         let parserInput = isRemoteContent ? document.body : escapeStandaloneCustomTags(in: document.body)
@@ -57,7 +58,12 @@ struct RenderedHTMLBuilder {
           \(baseElement)
           <meta http-equiv=\"Content-Security-Policy\" content=\"\(escapeHTML(contentSecurityPolicy))\" />
           <style>
-          \(themedStylesheet(theme: theme, appearance: appearance, textScale: textScale))
+          \(themedStylesheet(
+              theme: theme,
+              appearance: appearance,
+              textScale: textScale,
+              contentWidth: contentWidth
+          ))
           </style>
         </head>
         <body>
@@ -719,9 +725,15 @@ struct RenderedHTMLBuilder {
         return String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), roundedValue)
     }
 
-    private func themedStylesheet(theme: AppTheme, appearance: AppearancePreference, textScale: Double) -> String {
+    private func themedStylesheet(
+        theme: AppTheme,
+        appearance: AppearancePreference,
+        textScale: Double,
+        contentWidth: RenderedContentWidth
+    ) -> String {
         let palette = theme.palette
         let formattedTextScale = Self.formatCSSNumber(textScale)
+        let formattedContentWidth = contentWidth.cssValue
         let variableCSS: String
 
         switch appearance {
@@ -730,11 +742,13 @@ struct RenderedHTMLBuilder {
             :root {
               color-scheme: light dark;
               --text-scale: \(formattedTextScale);
+              --content-width: \(formattedContentWidth);
               \(cssVariables(for: palette.light))
             }
             @media (prefers-color-scheme: dark) {
               :root {
                 --text-scale: \(formattedTextScale);
+                --content-width: \(formattedContentWidth);
                 \(cssVariables(for: palette.dark))
               }
             }
@@ -744,6 +758,7 @@ struct RenderedHTMLBuilder {
             :root {
               color-scheme: light;
               --text-scale: \(formattedTextScale);
+              --content-width: \(formattedContentWidth);
               \(cssVariables(for: palette.light))
             }
             """
@@ -752,6 +767,7 @@ struct RenderedHTMLBuilder {
             :root {
               color-scheme: dark;
               --text-scale: \(formattedTextScale);
+              --content-width: \(formattedContentWidth);
               \(cssVariables(for: palette.dark))
             }
             """
@@ -792,7 +808,7 @@ struct RenderedHTMLBuilder {
 
         return """
         body { margin: 0; font-family: 'SF Pro Text', -apple-system, 'Helvetica Neue', sans-serif; font-size: calc(16.5px * var(--text-scale)); line-height: 1.7; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
-        .document { max-width: 760px; margin: 48px auto; padding: 0 32px 96px; }
+        .document { max-width: var(--content-width); margin: 48px auto; padding: 0 32px 96px; }
         .frontmatter { background: var(--surface); border: 1px solid var(--surface-border); border-radius: 10px; padding: 14px 20px; margin-bottom: 32px; font-size: calc(13px * var(--text-scale)); }
         .frontmatter h2 { margin: 0 0 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
         table { width: 100%; border-collapse: collapse; }

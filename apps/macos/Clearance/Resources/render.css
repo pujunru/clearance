@@ -9,7 +9,7 @@ body {
 }
 
 .document {
-  max-width: 760px;
+  max-width: var(--content-width);
   margin: 48px auto;
   padding: 0 32px 96px;
 }

@@ -3,6 +3,14 @@ import WebKit
 @testable import Clearance
 
 final class RenderedHTMLBuilderTests: XCTestCase {
+    func testRenderedContentWidthUsesSelectedCSSVariable() {
+        let parsed = FrontmatterParser().parse(markdown: "# Wide document")
+        let html = RenderedHTMLBuilder().build(document: parsed, contentWidth: .wide)
+
+        XCTAssertTrue(html.contains("--content-width: 1200px;"))
+        XCTAssertTrue(html.contains("max-width: var(--content-width);"))
+    }
+
     func testIncludesFrontmatterRowsForFlattenedKeys() {
         let document = ParsedMarkdownDocument(
             body: "# Title",

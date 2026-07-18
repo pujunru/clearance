@@ -147,6 +147,8 @@ struct RenderedMarkdownView: NSViewRepresentable {
     let theme: AppTheme
     let appearance: AppearancePreference
     let textScale: Double
+    let contentWidth: RenderedContentWidth
+    @ObservedObject var marginNoteStore: MarginNoteStore
     let onOpenLinkedDocument: (URL) -> Void
     private let builder = RenderedHTMLBuilder()
 
@@ -159,6 +161,8 @@ struct RenderedMarkdownView: NSViewRepresentable {
         theme: AppTheme,
         appearance: AppearancePreference,
         textScale: Double,
+        contentWidth: RenderedContentWidth = .compact,
+        marginNoteStore: MarginNoteStore,
         onOpenLinkedDocument: @escaping (URL) -> Void
     ) {
         self.document = document
@@ -169,18 +173,32 @@ struct RenderedMarkdownView: NSViewRepresentable {
         self.theme = theme
         self.appearance = appearance
         self.textScale = textScale
+        self.contentWidth = contentWidth
+        _marginNoteStore = ObservedObject(wrappedValue: marginNoteStore)
         self.onOpenLinkedDocument = onOpenLinkedDocument
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             sourceDocumentURL: sourceDocumentURL,
-            onOpenLinkedDocument: onOpenLinkedDocument
+            onOpenLinkedDocument: onOpenLinkedDocument,
+            onCreateNote: { _, _, _, _ in },
+            onUpdateNote: { _, _ in },
+            onDeleteNote: { _ in }
         )
     }
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: MarginNotesWebScript.source,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        ))
+        configuration.userContentController.add(
+            WeakScriptMessageHandler(delegate: context.coordinator),
+            name: MarginNotesWebScript.messageHandlerName
+        )
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
@@ -203,16 +221,37 @@ struct RenderedMarkdownView: NSViewRepresentable {
             theme: theme,
             appearance: appearance,
             textScale: textScale,
+            contentWidth: contentWidth,
             isRemoteContent: isRemoteContent
         )
         let coordinator = context.coordinator
         coordinator.sourceDocumentURL = sourceDocumentURL
         coordinator.onOpenLinkedDocument = onOpenLinkedDocument
+        coordinator.onCreateNote = { quote, prefix, suffix, text in
+            marginNoteStore.addNote(
+                documentURL: sourceDocumentURL,
+                quote: quote,
+                prefix: prefix,
+                suffix: suffix,
+                text: text
+            )
+        }
+        coordinator.onUpdateNote = { id, text in
+            marginNoteStore.updateNote(id: id, text: text)
+        }
+        coordinator.onDeleteNote = { id in
+            marginNoteStore.deleteNote(id: id)
+        }
+        let marginNotes = marginNoteStore.notes(for: sourceDocumentURL)
         let baseURL = Self.navigationBaseURL(for: sourceDocumentURL)
         if coordinator.renderContentKey != renderContentKey {
             coordinator.renderContentKey = renderContentKey
             coordinator.appliedTextScale = textScale
+            coordinator.appliedContentWidth = contentWidth
             coordinator.pendingTextScale = nil
+            coordinator.pendingContentWidth = nil
+            coordinator.appliedMarginNotes = nil
+            coordinator.pendingMarginNotes = marginNotes
             coordinator.pendingScrollRequest = headingScrollRequest
             coordinator.loadHandle = RenderedHTMLLoadHandle.load(
                 html: html,
@@ -228,6 +267,8 @@ struct RenderedMarkdownView: NSViewRepresentable {
         }
 
         coordinator.applyTextScaleIfNeeded(textScale, in: webView)
+        coordinator.applyContentWidthIfNeeded(contentWidth, in: webView)
+        coordinator.applyMarginNotesIfNeeded(marginNotes, in: webView)
         coordinator.applyScrollRequestIfNeeded(headingScrollRequest, in: webView)
     }
 
@@ -249,19 +290,69 @@ struct RenderedMarkdownView: NSViewRepresentable {
         return sourceDocumentURL.deletingLastPathComponent()
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var sourceDocumentURL: URL
         var onOpenLinkedDocument: (URL) -> Void
+        var onCreateNote: (String, String, String, String) -> Void
+        var onUpdateNote: (UUID, String) -> Void
+        var onDeleteNote: (UUID) -> Void
         fileprivate var renderContentKey: RenderContentKey?
         var pendingScrollRequest: HeadingScrollRequest?
         var pendingTextScale: Double?
         var appliedTextScale: Double?
+        var pendingContentWidth: RenderedContentWidth?
+        var appliedContentWidth: RenderedContentWidth?
+        var pendingMarginNotes: [MarginNote]?
+        var appliedMarginNotes: [MarginNote]?
         var loadHandle: RenderedHTMLLoadHandle?
         private var appliedScrollRequest: HeadingScrollRequest?
 
-        init(sourceDocumentURL: URL, onOpenLinkedDocument: @escaping (URL) -> Void) {
+        init(
+            sourceDocumentURL: URL,
+            onOpenLinkedDocument: @escaping (URL) -> Void,
+            onCreateNote: @escaping (String, String, String, String) -> Void,
+            onUpdateNote: @escaping (UUID, String) -> Void,
+            onDeleteNote: @escaping (UUID) -> Void
+        ) {
             self.sourceDocumentURL = sourceDocumentURL
             self.onOpenLinkedDocument = onOpenLinkedDocument
+            self.onCreateNote = onCreateNote
+            self.onUpdateNote = onUpdateNote
+            self.onDeleteNote = onDeleteNote
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == MarginNotesWebScript.messageHandlerName,
+                  let payload = message.body as? [String: Any],
+                  let action = payload["action"] as? String else {
+                return
+            }
+
+            switch action {
+            case "create":
+                guard let quote = payload["quote"] as? String,
+                      let prefix = payload["prefix"] as? String,
+                      let suffix = payload["suffix"] as? String,
+                      let text = payload["text"] as? String else {
+                    return
+                }
+                onCreateNote(quote, prefix, suffix, text)
+            case "update":
+                guard let rawID = payload["id"] as? String,
+                      let id = UUID(uuidString: rawID),
+                      let text = payload["text"] as? String else {
+                    return
+                }
+                onUpdateNote(id, text)
+            case "delete":
+                guard let rawID = payload["id"] as? String,
+                      let id = UUID(uuidString: rawID) else {
+                    return
+                }
+                onDeleteNote(id)
+            default:
+                break
+            }
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
@@ -291,6 +382,10 @@ struct RenderedMarkdownView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             applyTextScaleIfNeeded(pendingTextScale, in: webView)
             pendingTextScale = nil
+            applyContentWidthIfNeeded(pendingContentWidth, in: webView)
+            pendingContentWidth = nil
+            applyMarginNotesIfNeeded(pendingMarginNotes, in: webView)
+            pendingMarginNotes = nil
             applyScrollRequestIfNeeded(pendingScrollRequest, in: webView)
             pendingScrollRequest = nil
         }
@@ -313,6 +408,43 @@ struct RenderedMarkdownView: NSViewRepresentable {
             pendingTextScale = nil
         }
 
+        func applyContentWidthIfNeeded(_ contentWidth: RenderedContentWidth?, in webView: WKWebView) {
+            guard let contentWidth,
+                  contentWidth != appliedContentWidth else {
+                return
+            }
+
+            guard !webView.isLoading else {
+                pendingContentWidth = contentWidth
+                return
+            }
+
+            let script = "document.documentElement.style.setProperty('--content-width', '\(contentWidth.cssValue)');"
+            webView.evaluateJavaScript(script)
+            appliedContentWidth = contentWidth
+            pendingContentWidth = nil
+        }
+
+        func applyMarginNotesIfNeeded(_ notes: [MarginNote]?, in webView: WKWebView) {
+            guard let notes,
+                  notes != appliedMarginNotes else {
+                return
+            }
+
+            guard !webView.isLoading else {
+                pendingMarginNotes = notes
+                return
+            }
+
+            guard let data = try? JSONEncoder().encode(notes),
+                  let json = String(data: data, encoding: .utf8) else {
+                return
+            }
+            webView.evaluateJavaScript("window.clearanceMarginNotes?.setNotes(\(json));")
+            appliedMarginNotes = notes
+            pendingMarginNotes = nil
+        }
+
         func applyScrollRequestIfNeeded(_ request: HeadingScrollRequest?, in webView: WKWebView) {
             guard let request,
                   request != appliedScrollRequest else {
@@ -332,5 +464,17 @@ struct RenderedMarkdownView: NSViewRepresentable {
             webView.evaluateJavaScript(script)
             appliedScrollRequest = request
         }
+    }
+}
+
+private final class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var delegate: WKScriptMessageHandler?
+
+    init(delegate: WKScriptMessageHandler) {
+        self.delegate = delegate
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        delegate?.userContentController(userContentController, didReceive: message)
     }
 }
