@@ -90,6 +90,28 @@ final class MarginNotesWebScriptTests: XCTestCase {
             in: webView
         )
         XCTAssertTrue(hoverLinksAnchorAndNote)
+
+        _ = try await webView.evaluateJavaScript(
+            "document.querySelector('.clearance-margin-note-toggle').click(); true;"
+        )
+        let noteMinimized = try await evaluateBoolean(
+            """
+            document.querySelector('.clearance-margin-note')?.dataset.clearanceNoteMinimized === 'true' &&
+            getComputedStyle(document.querySelector('.clearance-margin-note-content')).display === 'none' &&
+            document.querySelector('.clearance-margin-note-toggle')?.getAttribute('aria-label') === 'Expand Note'
+            """,
+            in: webView
+        )
+        XCTAssertTrue(noteMinimized)
+
+        _ = try await webView.evaluateJavaScript(
+            "document.querySelector('.clearance-margin-note').click(); true;"
+        )
+        let noteExpanded = try await evaluateBoolean(
+            "document.querySelector('.clearance-margin-note')?.hasAttribute('data-clearance-note-minimized') === false",
+            in: webView
+        )
+        XCTAssertTrue(noteExpanded)
     }
 
     private func evaluateBoolean(_ script: String, in webView: WKWebView) async throws -> Bool {

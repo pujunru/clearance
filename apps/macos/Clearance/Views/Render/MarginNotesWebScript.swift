@@ -31,7 +31,7 @@ enum MarginNotesWebScript {
           z-index: 20;
           box-sizing: border-box;
           width: 240px;
-          padding: 11px 34px 11px 12px;
+          padding: 11px 58px 11px 12px;
           border: 1px solid color-mix(in srgb, var(--surface-border) 88%, transparent);
           border-left: 3px solid #e0a800;
           border-radius: 9px;
@@ -42,6 +42,44 @@ enum MarginNotesWebScript {
           white-space: pre-wrap;
           overflow-wrap: anywhere;
           cursor: default;
+          transition: box-shadow 120ms ease;
+        }
+        .clearance-margin-note[data-clearance-note-minimized="true"] {
+          width: 44px;
+          min-height: 34px;
+          padding: 0;
+          border-left-width: 4px;
+          border-radius: 9px;
+          cursor: pointer;
+        }
+        .clearance-margin-note[data-clearance-note-minimized="true"] .clearance-margin-note-content,
+        .clearance-margin-note[data-clearance-note-minimized="true"] .clearance-margin-note-delete {
+          display: none;
+        }
+        .clearance-margin-note-content {
+          white-space: pre-wrap;
+        }
+        .clearance-margin-note-toggle {
+          position: absolute;
+          top: 5px;
+          right: 29px;
+          width: 22px;
+          height: 22px;
+          border: 0;
+          border-radius: 5px;
+          padding: 0;
+          background: transparent;
+          color: var(--muted);
+          font: 17px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+          cursor: pointer;
+        }
+        .clearance-margin-note-toggle:hover {
+          background: color-mix(in srgb, var(--clearance-note-primary) 14%, transparent);
+          color: var(--text);
+        }
+        .clearance-margin-note[data-clearance-note-minimized="true"] .clearance-margin-note-toggle {
+          inset: 5px 7px auto auto;
+          color: var(--clearance-note-primary);
         }
         .clearance-margin-note:hover {
           border-color: color-mix(in srgb, #e0a800 55%, var(--surface-border));
@@ -145,6 +183,7 @@ enum MarginNotesWebScript {
       let editor = null;
       let pendingSelection = null;
       let connectorLayer = null;
+      const minimizedNoteIDs = new Set();
 
       const post = (payload) => {
         window.webkit?.messageHandlers?.clearanceMarginNotes?.postMessage(payload);
@@ -288,6 +327,24 @@ enum MarginNotesWebScript {
         ensureConnectorLayer().appendChild(path);
       };
 
+      const setNoteMinimized = (bubble, button, minimized) => {
+        const id = bubble.dataset.clearanceNoteId;
+        if (minimized) {
+          minimizedNoteIDs.add(id);
+          bubble.dataset.clearanceNoteMinimized = 'true';
+          button.textContent = '+';
+          button.title = 'Expand Note';
+          button.setAttribute('aria-label', 'Expand Note');
+        } else {
+          minimizedNoteIDs.delete(id);
+          bubble.removeAttribute('data-clearance-note-minimized');
+          button.textContent = '−';
+          button.title = 'Minimize Note';
+          button.setAttribute('aria-label', 'Minimize Note');
+        }
+        requestAnimationFrame(positionNotes);
+      };
+
       const positionNotes = () => {
         const documentRect = document.querySelector('.document')?.getBoundingClientRect();
         if (!documentRect) { return; }
@@ -362,8 +419,12 @@ enum MarginNotesWebScript {
           bubble.className = 'clearance-margin-note';
           bubble.dataset.clearanceNoteId = note.id;
           bubble.dataset.anchorTop = String(anchor.getBoundingClientRect().top + window.scrollY - 8);
-          bubble.textContent = note.text;
           bubble.title = `Selected text: ${note.quote}`;
+          const content = document.createElement('div');
+          content.className = 'clearance-margin-note-content';
+          content.textContent = note.text;
+          const toggleButton = document.createElement('button');
+          toggleButton.className = 'clearance-margin-note-toggle';
           const deleteButton = document.createElement('button');
           deleteButton.className = 'clearance-margin-note-delete';
           deleteButton.textContent = '×';
@@ -372,8 +433,17 @@ enum MarginNotesWebScript {
             event.stopPropagation();
             post({ action: 'delete', id: note.id });
           });
-          bubble.appendChild(deleteButton);
+          toggleButton.addEventListener('click', (event) => {
+            event.stopPropagation();
+            setNoteMinimized(bubble, toggleButton, !minimizedNoteIDs.has(note.id));
+          });
+          bubble.append(content, toggleButton, deleteButton);
+          setNoteMinimized(bubble, toggleButton, minimizedNoteIDs.has(note.id));
           bubble.addEventListener('click', () => {
+            if (minimizedNoteIDs.has(note.id)) {
+              setNoteMinimized(bubble, toggleButton, false);
+              return;
+            }
             const rect = bubble.getBoundingClientRect();
             openEditor({
               top: rect.top + window.scrollY,
