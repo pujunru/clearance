@@ -39,6 +39,7 @@ enum MarginNotesWebScript {
           color: var(--text);
           box-shadow: 0 5px 18px rgba(0, 0, 0, 0.10);
           font: 13px/1.45 -apple-system, BlinkMacSystemFont, sans-serif;
+          white-space: pre-wrap;
           overflow-wrap: anywhere;
           cursor: default;
         }

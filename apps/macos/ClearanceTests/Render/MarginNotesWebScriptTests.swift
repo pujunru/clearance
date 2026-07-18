@@ -44,7 +44,7 @@ final class MarginNotesWebScriptTests: XCTestCase {
               quote: 'cumulative rewards',
               prefix: 'Agent\\'s job is to max ',
               suffix: ' over time.',
-              text: 'Meaning total sum'
+              text: 'Meaning\\n\\ntotal sum'
             }]);
             window.clearanceMarginNotes.reposition();
             true;
@@ -57,10 +57,15 @@ final class MarginNotesWebScriptTests: XCTestCase {
         )
         XCTAssertTrue(anchorRendered)
         let bubbleRendered = try await evaluateBoolean(
-            "document.querySelector('.clearance-margin-note')?.textContent.includes('Meaning total sum') === true",
+            "document.querySelector('.clearance-margin-note')?.textContent.includes('Meaning\\n\\ntotal sum') === true",
             in: webView
         )
         XCTAssertTrue(bubbleRendered)
+        let bubblePreservesFormatting = try await evaluateBoolean(
+            "getComputedStyle(document.querySelector('.clearance-margin-note')).whiteSpace === 'pre-wrap'",
+            in: webView
+        )
+        XCTAssertTrue(bubblePreservesFormatting)
 
         let connectorRendered = try await evaluateBoolean(
             "document.querySelector('.clearance-note-connector')?.getAttribute('d')?.startsWith('M ') === true",
