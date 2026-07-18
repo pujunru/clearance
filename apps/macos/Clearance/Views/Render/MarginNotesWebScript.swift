@@ -183,6 +183,8 @@ enum MarginNotesWebScript {
       let editor = null;
       let pendingSelection = null;
       let connectorLayer = null;
+      let positioningFrame = null;
+      let noteResizeObserver = null;
       const minimizedNoteIDs = new Set();
 
       const post = (payload) => {
@@ -261,6 +263,7 @@ enum MarginNotesWebScript {
       };
 
       const removeNoteElements = () => {
+        noteResizeObserver?.disconnect();
         for (const element of document.querySelectorAll('.clearance-margin-note')) {
           element.remove();
         }
@@ -342,7 +345,8 @@ enum MarginNotesWebScript {
           button.title = 'Minimize Note';
           button.setAttribute('aria-label', 'Minimize Note');
         }
-        requestAnimationFrame(positionNotes);
+        positionNotes();
+        schedulePositionNotes();
       };
 
       const positionNotes = () => {
@@ -363,6 +367,22 @@ enum MarginNotesWebScript {
         }
         updateConnectorPaths();
       };
+
+      const schedulePositionNotes = () => {
+        if (positioningFrame !== null) {
+          cancelAnimationFrame(positioningFrame);
+        }
+        positioningFrame = requestAnimationFrame(() => {
+          positioningFrame = requestAnimationFrame(() => {
+            positioningFrame = null;
+            positionNotes();
+          });
+        });
+      };
+
+      if (typeof ResizeObserver === 'function') {
+        noteResizeObserver = new ResizeObserver(schedulePositionNotes);
+      }
 
       const closeEditor = () => {
         editor?.remove();
@@ -459,13 +479,15 @@ enum MarginNotesWebScript {
             setNoteActive(note.id, false);
           });
           document.body.appendChild(bubble);
+          noteResizeObserver?.observe(bubble);
           addConnector(note.id);
           for (const anchorElement of article.querySelectorAll(`.clearance-note-anchor[data-clearance-note-id="${CSS.escape(note.id)}"]`)) {
             anchorElement.addEventListener('mouseenter', () => setNoteActive(note.id, true));
             anchorElement.addEventListener('mouseleave', () => setNoteActive(note.id, false));
           }
         }
-        requestAnimationFrame(positionNotes);
+        positionNotes();
+        schedulePositionNotes();
       };
 
       const selectionAnchor = () => {
@@ -537,7 +559,10 @@ enum MarginNotesWebScript {
           closeEditor();
         }
       });
-      window.addEventListener('resize', positionNotes);
+      window.addEventListener('resize', () => {
+        positionNotes();
+        schedulePositionNotes();
+      });
 
       window.clearanceMarginNotes = {
         setNotes(value) {

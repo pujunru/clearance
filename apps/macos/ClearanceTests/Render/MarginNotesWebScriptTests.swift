@@ -112,6 +112,43 @@ final class MarginNotesWebScriptTests: XCTestCase {
             in: webView
         )
         XCTAssertTrue(noteExpanded)
+
+        _ = try await webView.evaluateJavaScript(
+            """
+            window.clearanceMarginNotes.setNotes([
+              {
+                id: '3DC1AF59-8441-45A7-A2D5-E271EA58A282',
+                quote: 'Agent\\'s job', prefix: '', suffix: ' is to max', text: 'First note'
+              },
+              {
+                id: 'A2E2319A-202F-4A43-9057-1DEB4F782215',
+                quote: 'cumulative rewards', prefix: 'Agent\\'s job is to max ', suffix: ' over time.',
+                text: 'Second note\\nwith multiple lines\\nthat changes its rendered height.'
+              },
+              {
+                id: 'D43E1228-9179-46A4-BE17-1CF85B8DBCB9',
+                quote: 'over time', prefix: 'cumulative rewards ', suffix: '.', text: 'Third note'
+              }
+            ]);
+            const toggles = Array.from(document.querySelectorAll('.clearance-margin-note-toggle'));
+            toggles.forEach((button) => button.click());
+            toggles.forEach((button) => button.click());
+            true;
+            """
+        )
+        try await Task.sleep(nanoseconds: 150_000_000)
+        let expandedNotesDoNotOverlap = try await evaluateBoolean(
+            """
+            (() => {
+              const notes = Array.from(document.querySelectorAll('.clearance-margin-note'))
+                .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top);
+              return notes.every((note, index) => index === notes.length - 1 ||
+                note.getBoundingClientRect().bottom + 7 <= notes[index + 1].getBoundingClientRect().top);
+            })()
+            """,
+            in: webView
+        )
+        XCTAssertTrue(expandedNotesDoNotOverlap)
     }
 
     private func evaluateBoolean(_ script: String, in webView: WKWebView) async throws -> Bool {
