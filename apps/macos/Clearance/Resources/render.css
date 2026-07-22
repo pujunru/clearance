@@ -241,6 +241,18 @@ th {
   transform: translateY(0);
 }
 
+.markdown img[data-clearance-media-expandable="true"] {
+  cursor: zoom-in;
+  border-radius: 8px;
+  transition: box-shadow 140ms ease;
+}
+
+.markdown img[data-clearance-media-expandable="true"]:hover,
+.markdown img[data-clearance-media-expandable="true"]:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--link) 34%, transparent);
+  outline: none;
+}
+
 .markdown .graphviz svg {
   display: block;
   max-width: 100%;
@@ -268,7 +280,8 @@ th {
 .diagram-overlay-panel {
   position: relative;
   width: min(1120px, calc(100vw - 48px));
-  max-height: calc(100vh - 48px);
+  height: calc(100vh - 48px);
+  max-height: 920px;
   display: flex;
   flex-direction: column;
   background: color-mix(in srgb, var(--surface) 94%, var(--bg));
@@ -276,6 +289,44 @@ th {
   border-radius: 20px;
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+}
+
+.diagram-overlay-toolbar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--surface-border) 92%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+}
+
+.diagram-overlay-toolbar button {
+  min-width: 32px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 9px;
+  background: transparent;
+  color: var(--text);
+  font: 600 13px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+  cursor: pointer;
+}
+
+.diagram-overlay-toolbar button:hover,
+.diagram-overlay-toolbar button:focus-visible {
+  background: color-mix(in srgb, var(--surface) 78%, var(--link) 22%);
+  outline: none;
+}
+
+.diagram-overlay-toolbar .diagram-overlay-scale {
+  min-width: 58px;
+  font-variant-numeric: tabular-nums;
 }
 
 .diagram-overlay-close {
@@ -300,15 +351,34 @@ th {
 }
 
 .diagram-overlay-body {
-  overflow: auto;
-  padding: 60px 24px 24px;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
-.diagram-overlay-body svg {
+.diagram-overlay-body[data-clearance-overlay-panning="true"] {
+  cursor: grabbing;
+}
+
+.diagram-overlay-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.diagram-overlay-canvas svg,
+.diagram-overlay-canvas img {
   display: block;
-  margin: 0 auto;
   max-width: none;
+  max-height: none;
   height: auto;
+  -webkit-user-drag: none;
 }
 
 @media (max-width: 720px) {
@@ -318,8 +388,13 @@ th {
 
   .diagram-overlay-panel {
     width: calc(100vw - 24px);
-    max-height: calc(100vh - 24px);
+    height: calc(100vh - 24px);
     border-radius: 16px;
+  }
+
+  .diagram-overlay-toolbar {
+    top: 12px;
+    left: 12px;
   }
 
   .diagram-overlay-close {
@@ -327,9 +402,6 @@ th {
     right: 12px;
   }
 
-  .diagram-overlay-body {
-    padding: 52px 16px 16px;
-  }
 }
 
 .markdown .math-block {

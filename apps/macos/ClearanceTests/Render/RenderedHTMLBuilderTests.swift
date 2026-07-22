@@ -297,6 +297,51 @@ final class RenderedHTMLBuilderTests: XCTestCase {
         XCTAssertEqual(didOpen, true)
     }
 
+    @MainActor
+    func testExpandedMediaCanZoomAndPan() async throws {
+        let webView = try await makeLoadedWebView(for: """
+        ```mermaid
+        graph TD
+          A[Start] --> B[Done]
+        ```
+        """)
+
+        try await waitForJavaScriptCondition(
+            "!!document.querySelector('.mermaid svg')",
+            in: webView
+        )
+
+        let zoomAndPanWork = try await evaluateJavaScriptBoolean(
+            """
+            (() => {
+              document.querySelector('.mermaid')?.click();
+              const body = document.querySelector('[data-clearance-diagram-overlay-body="true"]');
+              const canvas = document.querySelector('[data-clearance-diagram-overlay-canvas="true"]');
+              const zoomIn = document.querySelector('[data-clearance-overlay-zoom-in="true"]');
+              const reset = document.querySelector('[data-clearance-overlay-reset="true"]');
+              if (!body || !canvas || !zoomIn || !reset) { return false; }
+
+              const scaleBefore = reset.textContent;
+              zoomIn.click();
+              const zoomed = reset.textContent !== scaleBefore;
+              reset.click();
+              const resetToActualSize = reset.textContent === '100%';
+              const transformBeforePan = canvas.style.transform;
+              body.dispatchEvent(new WheelEvent('wheel', {
+                deltaX: 28,
+                deltaY: 18,
+                bubbles: true,
+                cancelable: true
+              }));
+              return zoomed && resetToActualSize && canvas.style.transform !== transformBeforePan;
+            })()
+            """,
+            in: webView
+        )
+
+        XCTAssertEqual(zoomAndPanWork, true)
+    }
+
     func testTransformsDotFencedBlocksIntoGraphvizContainers() {
         let body = """
         ```dot
@@ -402,6 +447,20 @@ final class RenderedHTMLBuilderTests: XCTestCase {
             """,
             in: webView
         )
+
+        let imageOpensOverlay = try await evaluateJavaScriptBoolean(
+            """
+            (() => {
+              const image = document.querySelector('article.markdown img');
+              image?.click();
+              return image?.dataset.clearanceMediaExpandable === 'true'
+                && !!document.querySelector('[data-clearance-diagram-overlay-open="true"]')
+                && !!document.querySelector('[data-clearance-diagram-overlay-canvas="true"] img');
+            })()
+            """,
+            in: webView
+        )
+        XCTAssertEqual(imageOpensOverlay, true)
     }
 
     @MainActor
@@ -441,6 +500,10 @@ final class RenderedHTMLBuilderTests: XCTestCase {
         XCTAssertTrue(html.contains("data-clearance-diagram-overlay=\"true\""))
         XCTAssertTrue(html.contains("data-clearance-diagram-overlay-close=\"true\""))
         XCTAssertTrue(html.contains("data-clearance-diagram-overlay-body=\"true\""))
+        XCTAssertTrue(html.contains("data-clearance-diagram-overlay-canvas=\"true\""))
+        XCTAssertTrue(html.contains("data-clearance-overlay-zoom-out=\"true\""))
+        XCTAssertTrue(html.contains("data-clearance-overlay-zoom-in=\"true\""))
+        XCTAssertTrue(html.contains("data-clearance-overlay-fit=\"true\""))
     }
 
     func testRenderedDiagramsIncludeOverlayBehaviorHooks() {
@@ -457,6 +520,9 @@ final class RenderedHTMLBuilderTests: XCTestCase {
         XCTAssertTrue(html.contains("const openDiagramOverlay ="))
         XCTAssertTrue(html.contains("const closeDiagramOverlay ="))
         XCTAssertTrue(html.contains("event.key === 'Escape'"))
+        XCTAssertTrue(html.contains("const zoomOverlayAt ="))
+        XCTAssertTrue(html.contains("pointermove"))
+        XCTAssertTrue(html.contains("addEventListener('wheel'"))
     }
 
     func testRenderedDiagramsIncludeOverlayStyles() {
@@ -475,6 +541,8 @@ final class RenderedHTMLBuilderTests: XCTestCase {
         XCTAssertTrue(html.contains(".diagram-overlay"))
         XCTAssertTrue(html.contains("position: fixed"))
         XCTAssertTrue(html.contains("background: color-mix("))
+        XCTAssertTrue(html.contains("touch-action: none"))
+        XCTAssertTrue(html.contains("cursor: grab"))
     }
 
     @MainActor
