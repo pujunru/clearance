@@ -132,9 +132,15 @@ private struct PopoutDocumentView: View {
             if mode == .view {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Picker("Content Width", selection: $appSettings.renderedContentWidth) {
-                            ForEach(RenderedContentWidth.allCases) { width in
-                                Text(width.title).tag(width)
+                        ForEach(RenderedContentWidth.allCases) { width in
+                            Button {
+                                appSettings.renderedContentWidth = width
+                            } label: {
+                                if appSettings.renderedContentWidth == width {
+                                    Label(width.title, systemImage: "checkmark")
+                                } else {
+                                    Text(width.title)
+                                }
                             }
                         }
                     } label: {
