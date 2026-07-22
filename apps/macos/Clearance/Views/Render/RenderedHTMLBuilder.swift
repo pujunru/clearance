@@ -133,7 +133,9 @@ struct RenderedHTMLBuilder {
               <button type=\"button\" data-clearance-overlay-zoom-in=\"true\" aria-label=\"Zoom in\">+</button>
               <button type=\"button\" data-clearance-overlay-fit=\"true\">Fit</button>
             </div>
-            <button type=\"button\" class=\"diagram-overlay-close\" data-clearance-diagram-overlay-close=\"true\" aria-label=\"Close expanded media\">Close</button>
+            <div class=\"diagram-overlay-close-group\">
+              <button type=\"button\" class=\"diagram-overlay-close\" data-clearance-diagram-overlay-close=\"true\" aria-label=\"Close expanded media\">Close</button>
+            </div>
             <div class=\"diagram-overlay-body\" data-clearance-diagram-overlay-body=\"true\">
               <div class=\"diagram-overlay-canvas\" data-clearance-diagram-overlay-canvas=\"true\"></div>
             </div>
@@ -1035,13 +1037,14 @@ struct RenderedHTMLBuilder {
         .diagram-overlay-toolbar button { min-width: 32px; height: 30px; border: 0; border-radius: 7px; padding: 0 9px; background: transparent; color: var(--text); font: 600 13px/1 -apple-system, BlinkMacSystemFont, sans-serif; cursor: pointer; }
         .diagram-overlay-toolbar button:hover, .diagram-overlay-toolbar button:focus-visible { background: color-mix(in srgb, var(--surface) 78%, var(--link) 22%); outline: none; }
         .diagram-overlay-toolbar .diagram-overlay-scale { min-width: 58px; font-variant-numeric: tabular-nums; }
-        .diagram-overlay-close { position: absolute; top: 16px; right: 16px; border: 1px solid color-mix(in srgb, var(--surface-border) 92%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--surface) 96%, transparent); color: var(--text); padding: 0.45rem 0.8rem; font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
-        .diagram-overlay-close:hover, .diagram-overlay-close:focus-visible { background: color-mix(in srgb, var(--surface) 82%, var(--link) 18%); outline: none; }
+        .diagram-overlay-close-group { position: absolute; top: 16px; right: 16px; z-index: 3; display: flex; align-items: center; padding: 5px; border: 1px solid color-mix(in srgb, var(--surface-border) 92%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--surface) 96%, transparent); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10); }
+        .diagram-overlay-close { min-width: 32px; height: 30px; border: 0; border-radius: 7px; padding: 0 9px; background: transparent; color: var(--text); font: 600 13px/1 -apple-system, BlinkMacSystemFont, sans-serif; cursor: pointer; }
+        .diagram-overlay-close:hover, .diagram-overlay-close:focus-visible { background: color-mix(in srgb, var(--surface) 78%, var(--link) 22%); outline: none; }
         .diagram-overlay-body { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none; }
         .diagram-overlay-body[data-clearance-overlay-panning="true"] { cursor: grabbing; }
         .diagram-overlay-canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
         .diagram-overlay-canvas svg, .diagram-overlay-canvas img { display: block; max-width: none; max-height: none; height: auto; -webkit-user-drag: none; }
-        @media (max-width: 720px) { .diagram-overlay { padding: 12px; } .diagram-overlay-panel { width: calc(100vw - 24px); height: calc(100vh - 24px); border-radius: 16px; } .diagram-overlay-toolbar { top: 12px; left: 12px; } .diagram-overlay-close { top: 12px; right: 12px; } }
+        @media (max-width: 720px) { .diagram-overlay { padding: 12px; } .diagram-overlay-panel { width: calc(100vw - 24px); height: calc(100vh - 24px); border-radius: 16px; } .diagram-overlay-toolbar { top: 12px; left: 12px; } .diagram-overlay-close-group { top: 12px; right: 12px; } }
         .markdown code { font-family: 'SF Mono', Menlo, Monaco, monospace; background: var(--inline-code-bg); color: var(--inline-code-text); padding: 2px 6px; border-radius: 5px; font-size: 0.88em; font-weight: 500; }
         .markdown pre { background: var(--code-bg); color: var(--code-text); padding: 16px 18px; border-radius: 10px; overflow-x: auto; white-space: pre; margin: 1.2em 0; font-size: 0.88em; line-height: 1.55; }
         .markdown pre code { background: transparent; color: inherit; padding: 0; font-size: inherit; white-space: inherit; display: block; }

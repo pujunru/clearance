@@ -329,24 +329,35 @@ th {
   font-variant-numeric: tabular-nums;
 }
 
-.diagram-overlay-close {
+.diagram-overlay-close-group {
   position: absolute;
   top: 16px;
   right: 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  padding: 5px;
   border: 1px solid color-mix(in srgb, var(--surface-border) 92%, transparent);
-  border-radius: 999px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+}
+
+.diagram-overlay-close {
+  min-width: 32px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 9px;
+  background: transparent;
   color: var(--text);
-  padding: 0.45rem 0.8rem;
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
+  font: 600 13px/1 -apple-system, BlinkMacSystemFont, sans-serif;
   cursor: pointer;
 }
 
 .diagram-overlay-close:hover,
 .diagram-overlay-close:focus-visible {
-  background: color-mix(in srgb, var(--surface) 82%, var(--link) 18%);
+  background: color-mix(in srgb, var(--surface) 78%, var(--link) 22%);
   outline: none;
 }
 
@@ -397,7 +408,7 @@ th {
     left: 12px;
   }
 
-  .diagram-overlay-close {
+  .diagram-overlay-close-group {
     top: 12px;
     right: 12px;
   }

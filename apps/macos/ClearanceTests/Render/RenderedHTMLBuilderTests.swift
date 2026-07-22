@@ -298,6 +298,38 @@ final class RenderedHTMLBuilderTests: XCTestCase {
     }
 
     @MainActor
+    func testExpandedMediaCloseButtonDismissesOverlay() async throws {
+        let webView = try await makeLoadedWebView(for: """
+        ```mermaid
+        graph TD
+          A[Start] --> B[Done]
+        ```
+        """)
+
+        try await waitForJavaScriptCondition(
+            "!!document.querySelector('.mermaid svg')",
+            in: webView
+        )
+
+        let didClose = try await evaluateJavaScriptBoolean(
+            """
+            (() => {
+              document.querySelector('.mermaid')?.click();
+              const overlay = document.querySelector('[data-clearance-diagram-overlay="true"]');
+              const close = document.querySelector('[data-clearance-diagram-overlay-close="true"]');
+              if (!overlay || !close || overlay.hidden) { return false; }
+              close.click();
+              return overlay.hidden
+                && !overlay.hasAttribute('data-clearance-diagram-overlay-open');
+            })()
+            """,
+            in: webView
+        )
+
+        XCTAssertEqual(didClose, true)
+    }
+
+    @MainActor
     func testExpandedMediaCanZoomAndPan() async throws {
         let webView = try await makeLoadedWebView(for: """
         ```mermaid
@@ -543,6 +575,8 @@ final class RenderedHTMLBuilderTests: XCTestCase {
         XCTAssertTrue(html.contains("background: color-mix("))
         XCTAssertTrue(html.contains("touch-action: none"))
         XCTAssertTrue(html.contains("cursor: grab"))
+        XCTAssertTrue(html.contains(".diagram-overlay-close-group"))
+        XCTAssertTrue(html.contains("z-index: 3"))
     }
 
     @MainActor
