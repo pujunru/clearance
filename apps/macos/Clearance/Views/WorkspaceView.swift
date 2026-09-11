@@ -19,6 +19,7 @@ struct WorkspaceView: View {
     @State private var isOutlineVisible = true
     @State private var renderedFindQuery = ""
     @State private var isRenderedSearchPresented = false
+    @State private var commentShareStatus: String?
     @State private var headingScrollSequence = 0
     @State private var headingScrollRequest: HeadingScrollRequest?
     private let showToolbarLayoutDebug = false
@@ -224,6 +225,16 @@ struct WorkspaceView: View {
                     contentWidthMenu
                 }
             }
+
+            ToolbarItem(id: "clearance.shareComments", placement: .primaryAction) {
+                Button {
+                    shareCommentsWithAgent()
+                } label: {
+                    Label("Share Comments", systemImage: "square.and.arrow.up")
+                }
+                .help("Copy agent-ready comments with source locations")
+                .disabled(!canShareComments)
+            }
         }
         .background(WindowToolbarPriorityConfigurator(
             activeURL: viewModel.activeDocumentURL,
@@ -302,6 +313,20 @@ struct WorkspaceView: View {
             }
         } message: {
             Text("This folder contains more than 10 supported files.")
+        }
+        .alert("Comments Copied", isPresented: Binding(
+            get: { commentShareStatus != nil },
+            set: { isPresented in
+                if !isPresented {
+                    commentShareStatus = nil
+                }
+            }
+        )) {
+            Button("OK", role: .cancel) {
+                commentShareStatus = nil
+            }
+        } message: {
+            Text(commentShareStatus ?? "")
         }
     }
 
@@ -485,6 +510,47 @@ struct WorkspaceView: View {
 
     private var canAdjustContentWidth: Bool {
         viewModel.mode == .view && activeMarkdownContent != nil
+    }
+
+    private var canShareComments: Bool {
+        guard viewModel.mode == .view,
+              let documentURL = activeDocumentURL,
+              activeMarkdownContent != nil else {
+            return false
+        }
+        return !marginNoteStore.notes(for: documentURL).isEmpty
+    }
+
+    private var activeDocumentURL: URL? {
+        if let session = viewModel.activeSession {
+            return session.url
+        }
+        if let remoteDocument = viewModel.activeRemoteDocument {
+            return remoteDocument.renderURL
+        }
+        return viewModel.activeReadOnlyDocument?.renderURL
+    }
+
+    private func shareCommentsWithAgent() {
+        guard let documentURL = activeDocumentURL,
+              let markdown = activeMarkdownContent else {
+            return
+        }
+
+        let notes = marginNoteStore.notes(for: documentURL)
+        guard !notes.isEmpty else {
+            return
+        }
+
+        let payload = MarginNoteShareFormatter.makePayload(
+            documentURL: documentURL,
+            markdown: markdown,
+            notes: notes
+        )
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
+        let noun = notes.count == 1 ? "comment" : "comments"
+        commentShareStatus = "Copied an agent-ready payload for \(notes.count) \(noun) to the clipboard."
     }
 
     private var contentWidthMenu: some View {
