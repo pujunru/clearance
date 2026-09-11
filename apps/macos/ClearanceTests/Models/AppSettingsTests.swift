@@ -113,6 +113,38 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(second.renderedTextScale, 1.1, accuracy: 0.001)
     }
 
+    func testDefaultRenderedContentWidthIsCompact() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+
+        let settings = AppSettings(
+            userDefaults: defaults,
+            renderedContentWidthStorageKey: "renderedContentWidth"
+        )
+
+        XCTAssertEqual(settings.renderedContentWidth, .compact)
+    }
+
+    func testPersistedRenderedContentWidthRestoresAfterReload() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+
+        let first = AppSettings(
+            userDefaults: defaults,
+            renderedContentWidthStorageKey: "renderedContentWidth"
+        )
+        first.renderedContentWidth = .wide
+
+        let second = AppSettings(
+            userDefaults: defaults,
+            renderedContentWidthStorageKey: "renderedContentWidth"
+        )
+
+        XCTAssertEqual(second.renderedContentWidth, .wide)
+    }
+
     func testFirstLaunchDoesNotPresentReleaseNotesAndRecordsVersion() {
         let suite = UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!

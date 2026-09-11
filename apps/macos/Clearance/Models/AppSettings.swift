@@ -1,6 +1,41 @@
 import AppKit
 import Foundation
 
+enum RenderedContentWidth: String, CaseIterable, Identifiable {
+    case compact
+    case comfortable
+    case wide
+    case full
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .compact:
+            return "Compact (760 pt)"
+        case .comfortable:
+            return "Comfortable (960 pt)"
+        case .wide:
+            return "Wide (1200 pt)"
+        case .full:
+            return "Full Width"
+        }
+    }
+
+    var cssValue: String {
+        switch self {
+        case .compact:
+            return "760px"
+        case .comfortable:
+            return "960px"
+        case .wide:
+            return "1200px"
+        case .full:
+            return "none"
+        }
+    }
+}
+
 enum AppearancePreference: String, CaseIterable, Identifiable {
     case system
     case light
@@ -234,11 +269,18 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var renderedContentWidth: RenderedContentWidth {
+        didSet {
+            userDefaults.set(renderedContentWidth.rawValue, forKey: renderedContentWidthStorageKey)
+        }
+    }
+
     private let userDefaults: UserDefaults
     private let openModeStorageKey: String
     private let themeStorageKey: String
     private let appearanceStorageKey: String
     private let renderedTextScaleStorageKey: String
+    private let renderedContentWidthStorageKey: String
     private let releaseNotesVersionStorageKey: String
 
     init(
@@ -247,6 +289,7 @@ final class AppSettings: ObservableObject {
         themeStorageKey: String = "theme",
         appearanceStorageKey: String = "appearance",
         renderedTextScaleStorageKey: String = "renderedTextScale",
+        renderedContentWidthStorageKey: String = "renderedContentWidth",
         releaseNotesVersionStorageKey: String = "releaseNotesVersion"
     ) {
         self.userDefaults = userDefaults
@@ -254,6 +297,7 @@ final class AppSettings: ObservableObject {
         self.themeStorageKey = themeStorageKey
         self.appearanceStorageKey = appearanceStorageKey
         self.renderedTextScaleStorageKey = renderedTextScaleStorageKey
+        self.renderedContentWidthStorageKey = renderedContentWidthStorageKey
         self.releaseNotesVersionStorageKey = releaseNotesVersionStorageKey
 
         if let stored = userDefaults.string(forKey: storageKey),
@@ -282,6 +326,13 @@ final class AppSettings: ObservableObject {
             renderedTextScale = storedTextScale
         } else {
             renderedTextScale = 1.0
+        }
+
+        if let storedContentWidth = userDefaults.string(forKey: renderedContentWidthStorageKey),
+           let parsedContentWidth = RenderedContentWidth(rawValue: storedContentWidth) {
+            renderedContentWidth = parsedContentWidth
+        } else {
+            renderedContentWidth = .compact
         }
     }
 

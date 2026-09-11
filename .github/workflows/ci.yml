@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS build and test
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec apps/macos/project.yml --project apps/macos
+
+      - name: Build and test
+        run: |
+          xcodebuild test \
+            -project apps/macos/Clearance.xcodeproj \
+            -scheme Clearance \
+            -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath "$RUNNER_TEMP/ClearanceDerivedData" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package unsigned app
+        run: |
+          APP_PATH="$RUNNER_TEMP/ClearanceDerivedData/Build/Products/Debug/Clearance.app"
+          ARCHIVE_PATH="$RUNNER_TEMP/Clearance-debug.zip"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Expected app bundle not found at $APP_PATH"
+            exit 1
+          fi
+
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ARCHIVE_PATH"
+
+      - name: Upload unsigned app
+        uses: actions/upload-artifact@v7.0.0
+        with:
+          name: Clearance-debug-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/Clearance-debug.zip
+          if-no-files-found: error
+          retention-days: 14

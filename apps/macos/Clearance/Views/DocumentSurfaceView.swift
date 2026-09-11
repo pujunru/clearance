@@ -8,6 +8,8 @@ struct DocumentSurfaceView: View {
     let theme: AppTheme
     let appearance: AppearancePreference
     let textScale: Double
+    let contentWidth: RenderedContentWidth
+    @ObservedObject var marginNoteStore: MarginNoteStore
     @Binding var mode: WorkspaceMode
 
     var body: some View {
@@ -21,6 +23,8 @@ struct DocumentSurfaceView: View {
                 theme: theme,
                 appearance: appearance,
                 textScale: textScale,
+                contentWidth: contentWidth,
+                marginNoteStore: marginNoteStore,
                 onOpenLinkedDocument: onOpenLinkedDocument
             )
         case .edit:

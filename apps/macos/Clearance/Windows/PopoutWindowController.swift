@@ -8,11 +8,17 @@ final class PopoutWindowController {
     private var windowDelegates: [ObjectIdentifier: PopoutWindowDelegate] = [:]
     private var titleSubscriptions: [ObjectIdentifier: AnyCancellable] = [:]
 
-    func openWindow(for session: DocumentSession, mode: WorkspaceMode, appSettings: AppSettings) {
+    func openWindow(
+        for session: DocumentSession,
+        mode: WorkspaceMode,
+        appSettings: AppSettings,
+        marginNoteStore: MarginNoteStore
+    ) {
         let content = PopoutDocumentView(
             session: session,
             initialMode: mode,
-            appSettings: appSettings
+            appSettings: appSettings,
+            marginNoteStore: marginNoteStore
         )
         let hostingController = NSHostingController(rootView: content)
 
@@ -74,14 +80,21 @@ private final class PopoutWindowDelegate: NSObject, NSWindowDelegate {
 private struct PopoutDocumentView: View {
     @ObservedObject var session: DocumentSession
     @ObservedObject var appSettings: AppSettings
+    @ObservedObject var marginNoteStore: MarginNoteStore
     @State private var mode: WorkspaceMode
     @State private var isOutlineVisible = true
     @State private var headingScrollSequence = 0
     @State private var headingScrollRequest: HeadingScrollRequest?
 
-    init(session: DocumentSession, initialMode: WorkspaceMode, appSettings: AppSettings) {
+    init(
+        session: DocumentSession,
+        initialMode: WorkspaceMode,
+        appSettings: AppSettings,
+        marginNoteStore: MarginNoteStore
+    ) {
         self.session = session
         self.appSettings = appSettings
+        self.marginNoteStore = marginNoteStore
         _mode = State(initialValue: initialMode)
     }
 
@@ -98,6 +111,8 @@ private struct PopoutDocumentView: View {
                 theme: appSettings.theme,
                 appearance: appSettings.appearance,
                 textScale: appSettings.renderedTextScale,
+                contentWidth: appSettings.renderedContentWidth,
+                marginNoteStore: marginNoteStore,
                 mode: $mode
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -114,6 +129,23 @@ private struct PopoutDocumentView: View {
         .clearancePreferredAppearance(appSettings.appearance)
         .toolbarRole(.editor)
         .toolbar {
+            if mode == .view {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Picker("Content Width", selection: $appSettings.renderedContentWidth) {
+                            ForEach(RenderedContentWidth.allCases) { width in
+                                Text(width.title).tag(width)
+                            }
+                        }
+                        .pickerStyle(.inline)
+                        .labelsHidden()
+                    } label: {
+                        Label("Content Width", systemImage: "arrow.left.and.right")
+                    }
+                    .labelStyle(.iconOnly)
+                    .help("Content Width: \(appSettings.renderedContentWidth.title)")
+                }
+            }
             if mode == .view && !parsed.headings.isEmpty {
                 ToolbarItem(placement: .automatic) {
                     Button {

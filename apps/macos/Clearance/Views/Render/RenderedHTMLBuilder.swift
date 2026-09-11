@@ -29,6 +29,7 @@ struct RenderedHTMLBuilder {
         theme: AppTheme = .apple,
         appearance: AppearancePreference = .system,
         textScale: Double = 1.0,
+        contentWidth: RenderedContentWidth = .compact,
         isRemoteContent: Bool = false
     ) -> String {
         let parserInput = isRemoteContent ? document.body : escapeStandaloneCustomTags(in: document.body)
@@ -57,7 +58,12 @@ struct RenderedHTMLBuilder {
           \(baseElement)
           <meta http-equiv=\"Content-Security-Policy\" content=\"\(escapeHTML(contentSecurityPolicy))\" />
           <style>
-          \(themedStylesheet(theme: theme, appearance: appearance, textScale: textScale))
+          \(themedStylesheet(
+              theme: theme,
+              appearance: appearance,
+              textScale: textScale,
+              contentWidth: contentWidth
+          ))
           </style>
         </head>
         <body>
@@ -120,9 +126,19 @@ struct RenderedHTMLBuilder {
     private func diagramOverlayHTML() -> String {
         """
         <div class=\"diagram-overlay\" data-clearance-diagram-overlay=\"true\" hidden>
-          <div class=\"diagram-overlay-panel\">
-            <button type=\"button\" class=\"diagram-overlay-close\" data-clearance-diagram-overlay-close=\"true\" aria-label=\"Close expanded diagram\">Close</button>
-            <div class=\"diagram-overlay-body\" data-clearance-diagram-overlay-body=\"true\"></div>
+          <div class=\"diagram-overlay-panel\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Expanded media viewer\">
+            <div class=\"diagram-overlay-toolbar\" role=\"toolbar\" aria-label=\"Zoom controls\">
+              <button type=\"button\" data-clearance-overlay-zoom-out=\"true\" aria-label=\"Zoom out\">−</button>
+              <button type=\"button\" class=\"diagram-overlay-scale\" data-clearance-overlay-reset=\"true\" aria-label=\"Reset zoom to 100 percent\">100%</button>
+              <button type=\"button\" data-clearance-overlay-zoom-in=\"true\" aria-label=\"Zoom in\">+</button>
+              <button type=\"button\" data-clearance-overlay-fit=\"true\">Fit</button>
+            </div>
+            <div class=\"diagram-overlay-close-group\">
+              <button type=\"button\" class=\"diagram-overlay-close\" data-clearance-diagram-overlay-close=\"true\" aria-label=\"Close expanded media\">Close</button>
+            </div>
+            <div class=\"diagram-overlay-body\" data-clearance-diagram-overlay-body=\"true\">
+              <div class=\"diagram-overlay-canvas\" data-clearance-diagram-overlay-canvas=\"true\"></div>
+            </div>
           </div>
         </div>
         """
@@ -200,7 +216,7 @@ struct RenderedHTMLBuilder {
 
     private func expandableDiagramAttributes() -> String {
         """
-         data-clearance-diagram-expandable=\"true\" tabindex=\"0\" role=\"button\" aria-label=\"Expand diagram\"
+         data-clearance-diagram-expandable=\"true\" data-clearance-media-expandable=\"true\" tabindex=\"0\" role=\"button\" aria-label=\"Expand diagram\"
         """
     }
 
@@ -500,7 +516,95 @@ struct RenderedHTMLBuilder {
 
           const overlay = document.querySelector('[data-clearance-diagram-overlay="true"]');
           const overlayBody = overlay?.querySelector('[data-clearance-diagram-overlay-body="true"]');
+          const overlayCanvas = overlay?.querySelector('[data-clearance-diagram-overlay-canvas="true"]');
           const overlayClose = overlay?.querySelector('[data-clearance-diagram-overlay-close="true"]');
+          const overlayZoomOut = overlay?.querySelector('[data-clearance-overlay-zoom-out="true"]');
+          const overlayZoomIn = overlay?.querySelector('[data-clearance-overlay-zoom-in="true"]');
+          const overlayReset = overlay?.querySelector('[data-clearance-overlay-reset="true"]');
+          const overlayFit = overlay?.querySelector('[data-clearance-overlay-fit="true"]');
+          let overlayScale = 1;
+          let overlayX = 0;
+          let overlayY = 0;
+          let overlayContentWidth = 1;
+          let overlayContentHeight = 1;
+          let panPointerID = null;
+          let panStartX = 0;
+          let panStartY = 0;
+          let panOriginX = 0;
+          let panOriginY = 0;
+
+          const clampOverlayScale = (scale) => Math.min(8, Math.max(0.1, scale));
+
+          const applyOverlayTransform = () => {
+            if (!overlayCanvas) { return; }
+            overlayCanvas.style.transform = `translate(${overlayX}px, ${overlayY}px) scale(${overlayScale})`;
+            if (overlayReset) {
+              overlayReset.textContent = `${Math.round(overlayScale * 100)}%`;
+            }
+          };
+
+          const centerOverlayAtScale = (scale) => {
+            if (!overlayBody) { return; }
+            overlayScale = clampOverlayScale(scale);
+            overlayX = (overlayBody.clientWidth - overlayContentWidth * overlayScale) / 2;
+            overlayY = (overlayBody.clientHeight - overlayContentHeight * overlayScale) / 2;
+            applyOverlayTransform();
+          };
+
+          const fitOverlayContent = () => {
+            if (!overlayBody) { return; }
+            const availableWidth = Math.max(1, overlayBody.clientWidth - 64);
+            const availableHeight = Math.max(1, overlayBody.clientHeight - 64);
+            centerOverlayAtScale(Math.min(
+              availableWidth / overlayContentWidth,
+              availableHeight / overlayContentHeight
+            ));
+          };
+
+          const zoomOverlayAt = (scale, clientX, clientY) => {
+            if (!overlayBody) { return; }
+            const nextScale = clampOverlayScale(scale);
+            const bodyRect = overlayBody.getBoundingClientRect();
+            const focalX = clientX === undefined ? overlayBody.clientWidth / 2 : clientX - bodyRect.left;
+            const focalY = clientY === undefined ? overlayBody.clientHeight / 2 : clientY - bodyRect.top;
+            const contentX = (focalX - overlayX) / overlayScale;
+            const contentY = (focalY - overlayY) / overlayScale;
+            overlayX = focalX - contentX * nextScale;
+            overlayY = focalY - contentY * nextScale;
+            overlayScale = nextScale;
+            applyOverlayTransform();
+          };
+
+          const prepareOverlayContent = (media) => {
+            if (!overlayCanvas) { return; }
+            let width = 0;
+            let height = 0;
+
+            if (media instanceof SVGElement) {
+              const viewBox = media.viewBox?.baseVal;
+              if (viewBox?.width > 0 && viewBox?.height > 0) {
+                width = viewBox.width;
+                height = viewBox.height;
+              }
+            } else if (media instanceof HTMLImageElement) {
+              width = media.naturalWidth;
+              height = media.naturalHeight;
+            }
+
+            if (!(width > 0 && height > 0)) {
+              const rect = media.getBoundingClientRect();
+              width = Math.max(1, rect.width);
+              height = Math.max(1, rect.height);
+            }
+
+            overlayContentWidth = width;
+            overlayContentHeight = height;
+            overlayCanvas.style.width = `${width}px`;
+            overlayCanvas.style.height = `${height}px`;
+            media.style.width = `${width}px`;
+            media.style.height = `${height}px`;
+            fitOverlayContent();
+          };
 
           const graphvizInstance = () => {
             if (!window.Viz || typeof window.Viz.instance !== 'function') {
@@ -546,11 +650,13 @@ struct RenderedHTMLBuilder {
           };
 
           const closeDiagramOverlay = () => {
-            if (!overlay || !overlayBody || overlay.hidden) { return; }
+            if (!overlay || !overlayCanvas || overlay.hidden) { return; }
 
             overlay.hidden = true;
             overlay.removeAttribute('data-clearance-diagram-overlay-open');
-            overlayBody.replaceChildren();
+            overlayCanvas.replaceChildren();
+            overlayBody?.removeAttribute('data-clearance-overlay-panning');
+            panPointerID = null;
 
             if (lastDiagramTrigger) {
               lastDiagramTrigger.setAttribute('aria-expanded', 'false');
@@ -560,21 +666,30 @@ struct RenderedHTMLBuilder {
           };
 
           const openDiagramOverlay = (container) => {
-            if (!overlay || !overlayBody) { return; }
+            if (!overlay || !overlayBody || !overlayCanvas) { return; }
 
-            const svg = container.querySelector('svg');
-            if (!(svg instanceof SVGElement)) { return; }
+            const media = container instanceof HTMLImageElement
+              ? container
+              : container.querySelector('svg, img');
+            if (!(media instanceof SVGElement) && !(media instanceof HTMLImageElement)) { return; }
 
             if (lastDiagramTrigger && lastDiagramTrigger !== container) {
               lastDiagramTrigger.setAttribute('aria-expanded', 'false');
             }
 
-            const clone = svg.cloneNode(true);
-            overlayBody.replaceChildren(clone);
+            const clone = media.cloneNode(true);
+            clone.removeAttribute('tabindex');
+            clone.removeAttribute('role');
+            clone.removeAttribute('data-clearance-media-expandable');
+            overlayCanvas.replaceChildren(clone);
             overlay.hidden = false;
             overlay.setAttribute('data-clearance-diagram-overlay-open', 'true');
             container.setAttribute('aria-expanded', 'true');
             lastDiagramTrigger = container;
+            prepareOverlayContent(clone);
+            if (clone instanceof HTMLImageElement && !clone.complete) {
+              clone.addEventListener('load', () => prepareOverlayContent(clone), { once: true });
+            }
             overlayClose?.focus();
           };
 
@@ -582,6 +697,48 @@ struct RenderedHTMLBuilder {
             if (overlayClose) {
               overlayClose.addEventListener('click', closeDiagramOverlay);
             }
+            overlayZoomOut?.addEventListener('click', () => zoomOverlayAt(overlayScale / 1.2));
+            overlayZoomIn?.addEventListener('click', () => zoomOverlayAt(overlayScale * 1.2));
+            overlayReset?.addEventListener('click', () => centerOverlayAtScale(1));
+            overlayFit?.addEventListener('click', fitOverlayContent);
+
+            overlayBody?.addEventListener('wheel', (event) => {
+              event.preventDefault();
+              if (event.ctrlKey || event.metaKey) {
+                zoomOverlayAt(overlayScale * Math.exp(-event.deltaY * 0.002), event.clientX, event.clientY);
+              } else {
+                overlayX -= event.deltaX;
+                overlayY -= event.deltaY;
+                applyOverlayTransform();
+              }
+            }, { passive: false });
+
+            overlayBody?.addEventListener('pointerdown', (event) => {
+              if (event.button !== 0) { return; }
+              event.preventDefault();
+              panPointerID = event.pointerId;
+              panStartX = event.clientX;
+              panStartY = event.clientY;
+              panOriginX = overlayX;
+              panOriginY = overlayY;
+              overlayBody.setPointerCapture(event.pointerId);
+              overlayBody.setAttribute('data-clearance-overlay-panning', 'true');
+            });
+            overlayBody?.addEventListener('pointermove', (event) => {
+              if (event.pointerId !== panPointerID) { return; }
+              overlayX = panOriginX + event.clientX - panStartX;
+              overlayY = panOriginY + event.clientY - panStartY;
+              applyOverlayTransform();
+            });
+            const finishOverlayPan = (event) => {
+              if (event.pointerId !== panPointerID) { return; }
+              panPointerID = null;
+              overlayBody?.removeAttribute('data-clearance-overlay-panning');
+            };
+            overlayBody?.addEventListener('pointerup', finishOverlayPan);
+            overlayBody?.addEventListener('pointercancel', finishOverlayPan);
+            overlayBody?.addEventListener('dblclick', fitOverlayContent);
+            overlayBody?.addEventListener('dragstart', (event) => event.preventDefault());
 
             overlay?.addEventListener('click', (event) => {
               if (event.target === overlay) {
@@ -592,6 +749,26 @@ struct RenderedHTMLBuilder {
             document.addEventListener('keydown', (event) => {
               if (event.key === 'Escape') {
                 closeDiagramOverlay();
+              } else if (!overlay?.hidden && (event.key === '+' || event.key === '=')) {
+                event.preventDefault();
+                zoomOverlayAt(overlayScale * 1.2);
+              } else if (!overlay?.hidden && event.key === '-') {
+                event.preventDefault();
+                zoomOverlayAt(overlayScale / 1.2);
+              } else if (!overlay?.hidden && event.key === '0') {
+                event.preventDefault();
+                centerOverlayAtScale(1);
+              } else if (!overlay?.hidden && event.key.toLowerCase() === 'f') {
+                event.preventDefault();
+                fitOverlayContent();
+              } else if (!overlay?.hidden && event.key.startsWith('Arrow')) {
+                event.preventDefault();
+                const distance = event.shiftKey ? 80 : 24;
+                if (event.key === 'ArrowLeft') { overlayX += distance; }
+                if (event.key === 'ArrowRight') { overlayX -= distance; }
+                if (event.key === 'ArrowUp') { overlayY += distance; }
+                if (event.key === 'ArrowDown') { overlayY -= distance; }
+                applyOverlayTransform();
               }
             });
 
@@ -606,6 +783,24 @@ struct RenderedHTMLBuilder {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
                   openDiagramOverlay(diagram);
+                }
+              });
+            }
+
+            const images = document.querySelectorAll('article.markdown img:not([data-clearance-media-expandable="true"])');
+            for (const image of images) {
+              if (image.closest('a')) { continue; }
+              image.setAttribute('data-clearance-media-expandable', 'true');
+              image.setAttribute('tabindex', '0');
+              image.setAttribute('role', 'button');
+              image.setAttribute('aria-label', image.alt ? `Expand image: ${image.alt}` : 'Expand image');
+              image.setAttribute('aria-expanded', 'false');
+              image.setAttribute('aria-haspopup', 'dialog');
+              image.addEventListener('click', () => openDiagramOverlay(image));
+              image.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  openDiagramOverlay(image);
                 }
               });
             }
@@ -719,9 +914,15 @@ struct RenderedHTMLBuilder {
         return String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), roundedValue)
     }
 
-    private func themedStylesheet(theme: AppTheme, appearance: AppearancePreference, textScale: Double) -> String {
+    private func themedStylesheet(
+        theme: AppTheme,
+        appearance: AppearancePreference,
+        textScale: Double,
+        contentWidth: RenderedContentWidth
+    ) -> String {
         let palette = theme.palette
         let formattedTextScale = Self.formatCSSNumber(textScale)
+        let formattedContentWidth = contentWidth.cssValue
         let variableCSS: String
 
         switch appearance {
@@ -730,11 +931,13 @@ struct RenderedHTMLBuilder {
             :root {
               color-scheme: light dark;
               --text-scale: \(formattedTextScale);
+              --content-width: \(formattedContentWidth);
               \(cssVariables(for: palette.light))
             }
             @media (prefers-color-scheme: dark) {
               :root {
                 --text-scale: \(formattedTextScale);
+                --content-width: \(formattedContentWidth);
                 \(cssVariables(for: palette.dark))
               }
             }
@@ -744,6 +947,7 @@ struct RenderedHTMLBuilder {
             :root {
               color-scheme: light;
               --text-scale: \(formattedTextScale);
+              --content-width: \(formattedContentWidth);
               \(cssVariables(for: palette.light))
             }
             """
@@ -752,6 +956,7 @@ struct RenderedHTMLBuilder {
             :root {
               color-scheme: dark;
               --text-scale: \(formattedTextScale);
+              --content-width: \(formattedContentWidth);
               \(cssVariables(for: palette.dark))
             }
             """
@@ -792,7 +997,7 @@ struct RenderedHTMLBuilder {
 
         return """
         body { margin: 0; font-family: 'SF Pro Text', -apple-system, 'Helvetica Neue', sans-serif; font-size: calc(16.5px * var(--text-scale)); line-height: 1.7; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
-        .document { max-width: 760px; margin: 48px auto; padding: 0 32px 96px; }
+        .document { max-width: var(--content-width); margin: 48px auto; padding: 0 32px 96px; }
         .frontmatter { background: var(--surface); border: 1px solid var(--surface-border); border-radius: 10px; padding: 14px 20px; margin-bottom: 32px; font-size: calc(13px * var(--text-scale)); }
         .frontmatter h2 { margin: 0 0 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
         table { width: 100%; border-collapse: collapse; }
@@ -823,14 +1028,23 @@ struct RenderedHTMLBuilder {
         .markdown [data-clearance-diagram-expandable="true"]:hover, .markdown [data-clearance-diagram-expandable="true"]:focus-visible { background: color-mix(in srgb, var(--surface) 76%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--link) 22%, transparent); outline: none; }
         .markdown [data-clearance-diagram-expandable="true"]::after { content: 'Expand'; position: absolute; top: 10px; right: 10px; padding: 0.35rem 0.6rem; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--surface-border) 88%, transparent); background: color-mix(in srgb, var(--surface) 92%, transparent); color: var(--text); font-family: 'SF Pro Text', -apple-system, 'Helvetica Neue', sans-serif; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.01em; line-height: 1; opacity: 0; transform: translateY(-2px); transition: opacity 140ms ease, transform 140ms ease; pointer-events: none; }
         .markdown [data-clearance-diagram-expandable="true"]:hover::after, .markdown [data-clearance-diagram-expandable="true"]:focus-visible::after { opacity: 1; transform: translateY(0); }
+        .markdown img[data-clearance-media-expandable="true"] { cursor: zoom-in; border-radius: 8px; transition: box-shadow 140ms ease; }
+        .markdown img[data-clearance-media-expandable="true"]:hover, .markdown img[data-clearance-media-expandable="true"]:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--link) 34%, transparent); outline: none; }
         .diagram-overlay[hidden] { display: none !important; }
         .diagram-overlay { position: fixed; inset: 0; z-index: 999; display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; background: color-mix(in srgb, var(--bg) 32%, #000 68%); backdrop-filter: blur(12px); }
-        .diagram-overlay-panel { position: relative; width: min(1120px, calc(100vw - 48px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; background: color-mix(in srgb, var(--surface) 94%, var(--bg)); border: 1px solid color-mix(in srgb, var(--surface-border) 80%, transparent); border-radius: 20px; box-shadow: 0 28px 80px rgba(0, 0, 0, 0.3); overflow: hidden; }
-        .diagram-overlay-close { position: absolute; top: 16px; right: 16px; border: 1px solid color-mix(in srgb, var(--surface-border) 92%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--surface) 96%, transparent); color: var(--text); padding: 0.45rem 0.8rem; font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
-        .diagram-overlay-close:hover, .diagram-overlay-close:focus-visible { background: color-mix(in srgb, var(--surface) 82%, var(--link) 18%); outline: none; }
-        .diagram-overlay-body { overflow: auto; padding: 60px 24px 24px; }
-        .diagram-overlay-body svg { display: block; margin: 0 auto; max-width: none; height: auto; }
-        @media (max-width: 720px) { .diagram-overlay { padding: 12px; } .diagram-overlay-panel { width: calc(100vw - 24px); max-height: calc(100vh - 24px); border-radius: 16px; } .diagram-overlay-close { top: 12px; right: 12px; } .diagram-overlay-body { padding: 52px 16px 16px; } }
+        .diagram-overlay-panel { position: relative; width: min(1120px, calc(100vw - 48px)); height: calc(100vh - 48px); max-height: 920px; display: flex; flex-direction: column; background: color-mix(in srgb, var(--surface) 94%, var(--bg)); border: 1px solid color-mix(in srgb, var(--surface-border) 80%, transparent); border-radius: 20px; box-shadow: 0 28px 80px rgba(0, 0, 0, 0.3); overflow: hidden; }
+        .diagram-overlay-toolbar { position: absolute; top: 16px; left: 16px; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 5px; border: 1px solid color-mix(in srgb, var(--surface-border) 92%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--surface) 96%, transparent); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10); }
+        .diagram-overlay-toolbar button { min-width: 32px; height: 30px; border: 0; border-radius: 7px; padding: 0 9px; background: transparent; color: var(--text); font: 600 13px/1 -apple-system, BlinkMacSystemFont, sans-serif; cursor: pointer; }
+        .diagram-overlay-toolbar button:hover, .diagram-overlay-toolbar button:focus-visible { background: color-mix(in srgb, var(--surface) 78%, var(--link) 22%); outline: none; }
+        .diagram-overlay-toolbar .diagram-overlay-scale { min-width: 58px; font-variant-numeric: tabular-nums; }
+        .diagram-overlay-close-group { position: absolute; top: 16px; right: 16px; z-index: 3; display: flex; align-items: center; padding: 5px; border: 1px solid color-mix(in srgb, var(--surface-border) 92%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--surface) 96%, transparent); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10); }
+        .diagram-overlay-close { min-width: 32px; height: 30px; border: 0; border-radius: 7px; padding: 0 9px; background: transparent; color: var(--text); font: 600 13px/1 -apple-system, BlinkMacSystemFont, sans-serif; cursor: pointer; }
+        .diagram-overlay-close:hover, .diagram-overlay-close:focus-visible { background: color-mix(in srgb, var(--surface) 78%, var(--link) 22%); outline: none; }
+        .diagram-overlay-body { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none; }
+        .diagram-overlay-body[data-clearance-overlay-panning="true"] { cursor: grabbing; }
+        .diagram-overlay-canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+        .diagram-overlay-canvas svg, .diagram-overlay-canvas img { display: block; max-width: none; max-height: none; height: auto; -webkit-user-drag: none; }
+        @media (max-width: 720px) { .diagram-overlay { padding: 12px; } .diagram-overlay-panel { width: calc(100vw - 24px); height: calc(100vh - 24px); border-radius: 16px; } .diagram-overlay-toolbar { top: 12px; left: 12px; } .diagram-overlay-close-group { top: 12px; right: 12px; } }
         .markdown code { font-family: 'SF Mono', Menlo, Monaco, monospace; background: var(--inline-code-bg); color: var(--inline-code-text); padding: 2px 6px; border-radius: 5px; font-size: 0.88em; font-weight: 500; }
         .markdown pre { background: var(--code-bg); color: var(--code-text); padding: 16px 18px; border-radius: 10px; overflow-x: auto; white-space: pre; margin: 1.2em 0; font-size: 0.88em; line-height: 1.55; }
         .markdown pre code { background: transparent; color: inherit; padding: 0; font-size: inherit; white-space: inherit; display: block; }
